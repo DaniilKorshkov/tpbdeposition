@@ -50,8 +50,8 @@ def main():
 
     while True:
         current_time = (datetime.datetime.now()).strftime("%Y-%h-%d %H:%M:%S")
-        voltage = kp.ReadVoltage("1")
-        amperage = kp.ReadAmperage("1")
+        voltage = (kp.ReadVoltage("1"))[0]
+        amperage = (kp.ReadAmperage("1"))[0]
 
 
 
