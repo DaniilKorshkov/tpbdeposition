@@ -31,6 +31,7 @@ def ReadVoltage(channel):
     SendCommand("*RST")
     SendCommand(f"INSTR CH{channel}")
     ret = SendQuery("VOLT?")
+    SendCommand("*RST")
     return ret
 
 
@@ -38,7 +39,24 @@ def ReadAmperage(channel):
     SendCommand("*RST")
     SendCommand(f"INSTR CH{channel}")
     ret = SendQuery("CURR?")
+    SendCommand("*RST")
     return ret
+
+def SetVoltage(channel,voltage):
+    SendCommand("*RST")
+    SendCommand(f"INSTR CH{channel}")
+    ret = SendQuery(f"VOLT {voltage}")
+    SendCommand("*RST")
+    return ret
+
+
+def SetAmperage(channel,amperage):
+    SendCommand("*RST")
+    SendCommand(f"INSTR CH{channel}")
+    ret = SendQuery(f"CURR {amperage}")
+    SendCommand("*RST")
+    return ret
+
 
 
 
