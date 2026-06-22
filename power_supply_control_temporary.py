@@ -13,16 +13,17 @@ def main():
 
     log_filename = js.ReadJSONConfig("cygnus2","log_filename")
     power_supply_output_index = js.ReadJSONConfig("cygnus2","power_supply_output_index")
+    sleep_time = js.ReadJSONConfig("cygnus2","sleep_time")
     maximal_amperage = js.ReadJSONConfig("keysight_power_supply","maximal_amperage")
 
 
     while True:
         power_percentage = ccp.get_power_percentage(log_filename, power_supply_output_index)
         amperage = (power_percentage**0.5)*maximal_amperage
-        #SetAmperage(1, amperage)
+        SetAmperage(1, amperage)
 
         print(f"Power %: {power_percentage}, amperage: {amperage}")
-        time.sleep(0.1)
+        time.sleep(sleep_time)
 
 
 

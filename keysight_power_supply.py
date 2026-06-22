@@ -12,6 +12,7 @@ def SendCommand(command, config="MainConfig"):
 
     
     keysight.write(command)
+    keysight.close()
 
 def SendQuery(command, config="MainConfig"):
 
@@ -22,39 +23,40 @@ def SendQuery(command, config="MainConfig"):
 
     
     ret = keysight.query_ascii_values(command)
+    keysight.close()
 
-    return(ret)
+    return ret
 
 
 
 def ReadVoltage(channel):
-    SendCommand("*RST")
+    
     SendCommand(f"INSTR CH{channel}")
     ret = SendQuery("VOLT?")
-    SendCommand("*RST")
+    
     return ret
 
 
 def ReadAmperage(channel):
-    SendCommand("*RST")
+    
     SendCommand(f"INSTR CH{channel}")
     ret = SendQuery("CURR?")
-    SendCommand("*RST")
+    
     return ret
 
 def SetVoltage(channel,voltage):
-    SendCommand("*RST")
+    
     SendCommand(f"INSTR CH{channel}")
-    ret = SendQuery(f"VOLT {voltage}")
-    SendCommand("*RST")
+    ret = SendCommand(f"VOLT {voltage}")
+    
     return ret
 
 
 def SetAmperage(channel,amperage):
-    SendCommand("*RST")
+    
     SendCommand(f"INSTR CH{channel}")
-    ret = SendQuery(f"CURR {amperage}")
-    SendCommand("*RST")
+    ret = SendCommand(f"CURR {amperage}")
+    
     return ret
 
 
