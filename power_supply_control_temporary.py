@@ -12,8 +12,8 @@ def main():
     
 
     log_filename = js.ReadJSONConfig("cygnus2","log_filename")
-    power_supply_output_index = js.ReadJSONConfig("cygnus2","power_supply_output_index")
-    sleep_time = js.ReadJSONConfig("cygnus2","sleep_time")
+    power_supply_output_index = js.ReadJSONConfig("cygnus2","power_supply_output_index") # specifies which log entry has Output value
+    sleep_time = js.ReadJSONConfig("keysight_power_supply","sleep_time")
     maximal_amperage = js.ReadJSONConfig("keysight_power_supply","maximal_amperage")
 
 
