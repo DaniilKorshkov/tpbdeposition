@@ -14,7 +14,7 @@ def get_power_percentage(log_filename, power_output_index):
     with open(log_filename, 'r') as f:
         last_line = deque(f, maxlen=1).pop().strip()
         if not("Cygnus2" in last_line):
-            power_percentage = float(( last_line.split(" ") )[power_output_index])
+            power_percentage = float(( last_line.split("\t") )[power_output_index])
 
     return power_percentage
 
