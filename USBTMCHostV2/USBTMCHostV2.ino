@@ -12,6 +12,11 @@
 
 #include <SPI.h>
 
+const int ANINE = A9;
+const float RESISTANCE = 1.0;
+const float MIN_WATTAGE = 20.0;
+const float MAX_WATTAGE = 30.0;
+
 const char USB488Terminator = '\n';
 const char SerialTerminator = '\n';
 
@@ -115,46 +120,53 @@ USB Usb;
 USBTMCAsync UsbtmcAsync;
 USBTMC Usbtmc(&Usb, &UsbtmcAsync);
 
-
-
-
-
-
-
-
-
-
-
-
-const int ANINE = A9;
-const float RESISTANCE = 1.0;
-const float MIN_WATTAGE = 20.0;
-const float MAX_WATTAGE = 30.0;
-
 void setup()
 {
-    
+    Serial.begin(115200);
+#if !defined(__MIPSEL__)
+    while (!Serial)
+        ; // Wait for serial port to connect - used on Leonardo, Teensy and other boards with built-in USB CDC serial connection
+#endif
+    Serial.println(F("USBTMC Host Start"));
 
-    Usbtmc.TimeStep(0); // Try to change timestep when you can not receive all of the data.
-                        // Some test and measurement instruments can not respond quickly.
+    if (Usb.Init() == -1)
+        Serial.println(F("OSC did not start."));
 
-
+    delay(200);
 
     pinMode(ANINE,INPUT);
 
 
-    Usb.Task();
-    Usbtmc.Run();
-      
+    Usbtmc.TimeStep(0); // Try to change timestep when you can not receive all of the data.
+                        // Some test and measurement instruments can not respond quickly.
 }
-
-
 
 void loop()
 {
     Usb.Task();
     Usbtmc.Run();
 
+    if (Usb.getUsbTaskState() != USB_STATE_RUNNING)
+    {
+        return;
+    }
+
+    if (isTransmitOnBin)
+    {
+        // #48196XXXX,,,
+        while (Serial.available() > 0)
+        {
+            Usbtmc.TransmitData(Serial.read());
+
+            if (Usbtmc.TransmitDone())
+            {
+                isTransmitOnBin = false;
+                break;
+            }
+        }
+
+        return;
+    }
 
     int raw_signal = analogRead(ANINE);
     float amperage = sqrt((( MAX_WATTAGE*raw_signal + MIN_WATTAGE*(1023-raw_signal)   )/(1023*RESISTANCE)));
@@ -162,12 +174,42 @@ void loop()
    String param = "CURR ";
    param += String(amperage);
    param += (char)USB488Terminator;
+
+   //Serial.println("Raw signal: "); Serial.print(raw_signal,DEC); Serial.println(" Amperage: "); Serial.print(amperage,DEC); Serial.println("\n");
         
     Usbtmc.Transmit(param.length(), (uint8_t *)param.c_str());
 
-    delay(50);
+    delay(100);
 
     
-           
 }
 
+String serialReceive()
+{
+    static String tmpText = "";
+    String receivedText = "";
+    char rc;
+
+    while (Serial.available() > 0)
+    {
+        rc = Serial.read();
+
+        if ((rc == 0x00) || (!isAscii(rc)))
+        {
+            continue;
+        }
+
+        if (rc == SerialTerminator)
+        {
+            receivedText = tmpText;
+            tmpText = "";
+            break;
+        }
+        else
+        {
+            tmpText += rc;
+        }
+    }
+
+    return receivedText;
+}
