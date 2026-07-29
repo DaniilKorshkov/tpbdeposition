@@ -115,10 +115,22 @@ void USBTMCAsync::OnFailed(USBTMCInformation info, uint8_t code)
     }
 }
 
+#define MAX_USBTMC_DEVICES 8
+
 USB Usb;
-// USBHub Hub1(&Usb);
-USBTMCAsync UsbtmcAsync;
-USBTMC Usbtmc(&Usb, &UsbtmcAsync);
+USBHub Hub1(&Usb);
+
+USBTMCAsync UsbtmcAsync[MAX_USBTMC_DEVICES] = { };
+USBTMC Usbtmc[MAX_USBTMC_DEVICES] = {
+    USBTMC(&Usb, &UsbtmcAsync[0]),
+    USBTMC(&Usb, &UsbtmcAsync[1]),
+    USBTMC(&Usb, &UsbtmcAsync[2]),
+    USBTMC(&Usb, &UsbtmcAsync[3]),
+    USBTMC(&Usb, &UsbtmcAsync[4]),
+    USBTMC(&Usb, &UsbtmcAsync[5]),
+    USBTMC(&Usb, &UsbtmcAsync[6]),
+    USBTMC(&Usb, &UsbtmcAsync[7]),
+};
 
 void setup()
 {
@@ -137,14 +149,21 @@ void setup()
     pinMode(ANINE,INPUT);
 
 
-    Usbtmc.TimeStep(0); // Try to change timestep when you can not receive all of the data.
-                        // Some test and measurement instruments can not respond quickly.
+    for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
+    {
+        Usbtmc[i].TimeStep(0); // Try to change timestep when you can not receive all of the data.
+                               // Some test and measurement instruments can not respond quickly.
+    }
 }
 
 void loop()
 {
     Usb.Task();
-    Usbtmc.Run();
+
+    for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
+    {
+        Usbtmc[i].Run();
+    }
 
     if (Usb.getUsbTaskState() != USB_STATE_RUNNING)
     {
@@ -156,12 +175,18 @@ void loop()
         // #48196XXXX,,,
         while (Serial.available() > 0)
         {
-            Usbtmc.TransmitData(Serial.read());
-
-            if (Usbtmc.TransmitDone())
+            for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
             {
-                isTransmitOnBin = false;
-                break;
+                if (Usbtmc[i].IsConnected())
+                {
+                    Usbtmc[i].TransmitData(Serial.read());
+
+                    if (Usbtmc[i].TransmitDone())
+                    {
+                        isTransmitOnBin = false;
+                        break;
+                    }
+                }
             }
         }
 
@@ -177,11 +202,15 @@ void loop()
 
    //Serial.println("Raw signal: "); Serial.print(raw_signal,DEC); Serial.println(" Amperage: "); Serial.print(amperage,DEC); Serial.println("\n");
         
-    Usbtmc.Transmit(param.length(), (uint8_t *)param.c_str());
+    for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
+    {
+        if (Usbtmc[i].IsConnected() && Usbtmc[i].IsIdle())
+        {
+            Usbtmc[i].Transmit(param.length(), (uint8_t *)param.c_str());
+        }
+    }
 
     delay(100);
-
-    
 }
 
 String serialReceive()
