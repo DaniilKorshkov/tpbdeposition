@@ -22,9 +22,17 @@ const char SerialTerminator = '\n';
 
 static bool isTransmitOnBin = false;
 
+// Readback state per device
+enum RbState { RB_IDLE, RB_QUERY_SENT, RB_WAIT_RESPONSE, RB_DONE };
+static RbState rbState[MAX_USBTMC_DEVICES] = { };
+static String responseBuf[MAX_USBTMC_DEVICES];
+static String ret_string = "";
+
 class USBTMCAsync : public USBTMCAsyncOper
 {
+    uint8_t devIndex;
 public:
+    USBTMCAsync(uint8_t index) : devIndex(index) {}
     void OnRcvdDescr(USB_DEVICE_DESCRIPTOR *pdescr, uint8_t *serialNumPtr, uint8_t serialNumLen);
     void OnReceived(uint8_t data);
     void OnReadStatusByte(uint8_t status);
@@ -33,13 +41,19 @@ public:
 
 void USBTMCAsync::OnRcvdDescr(USB_DEVICE_DESCRIPTOR *pdescr, uint8_t *serialNumPtr, uint8_t serialNumLen)
 {
-    Serial.print(F("ProductID:"));
+    Serial.print(F("Dev["));
+    Serial.print(devIndex);
+    Serial.print(F("] ProductID:"));
     Serial.println(pdescr->idProduct, HEX);
 
-    Serial.print(F("VendorID:"));
+    Serial.print(F("Dev["));
+    Serial.print(devIndex);
+    Serial.print(F("] VendorID:"));
     Serial.println(pdescr->idVendor, HEX);
 
-    Serial.print(F("SerialNumber:"));
+    Serial.print(F("Dev["));
+    Serial.print(devIndex);
+    Serial.print(F("] SerialNumber:"));
     for (int i = 2; i < serialNumLen; i += 2)
     { // string is UTF-16LE encoded
         Serial.print((char)serialNumPtr[i]);
@@ -51,6 +65,10 @@ void USBTMCAsync::OnRcvdDescr(USB_DEVICE_DESCRIPTOR *pdescr, uint8_t *serialNumP
 void USBTMCAsync::OnReceived(uint8_t data)
 {
     Serial.write(data);
+    if (rbState[devIndex] >= RB_QUERY_SENT)
+    {
+        responseBuf[devIndex] += (char)data;
+    }
 }
 
 void USBTMCAsync::OnReadStatusByte(uint8_t status)
@@ -117,10 +135,34 @@ void USBTMCAsync::OnFailed(USBTMCInformation info, uint8_t code)
 
 #define MAX_USBTMC_DEVICES 8
 
+// USB string descriptor in raw format: [length, 0x03, UTF-16LE chars].
+// To discover actual serials: upload without SetTargetSerialNumber, observe
+// the "Dev[X] SerialNumber:" lines in serial output, then fill in below.
+//
+// Example for serial "CN65290125" (10 chars -> 0x16 = 2 + 2*10):
+//   static const uint8_t SERIAL_PSU[] PROGMEM = {
+//       0x16, 0x03,
+//       'C',0, 'N',0, '6',0, '5',0, '2',0,
+//       '9',0, '0',0, '1',0, '2',0, '5',0
+//   };
+static const uint8_t SERIAL_PSU1[] PROGMEM = {
+    0x16, 0x03,
+    'C',0, 'N',0, '6',0, '5',0, '2',0,
+    '8',0, '0',0, '1',0, '2',0, '9',0
+};
+static const uint8_t SERIAL_PSU2[] PROGMEM = {
+    0x16, 0x03,
+    'C',0, 'N',0, '6',0, '5',0, '2',0,
+    '9',0, '0',0, '1',0, '2',0, '5',0
+};
+
 USB Usb;
 USBHub Hub1(&Usb);
 
-USBTMCAsync UsbtmcAsync[MAX_USBTMC_DEVICES] = { };
+USBTMCAsync UsbtmcAsync[MAX_USBTMC_DEVICES] = {
+    USBTMCAsync(0), USBTMCAsync(1), USBTMCAsync(2), USBTMCAsync(3),
+    USBTMCAsync(4), USBTMCAsync(5), USBTMCAsync(6), USBTMCAsync(7),
+};
 USBTMC Usbtmc[MAX_USBTMC_DEVICES] = {
     USBTMC(&Usb, &UsbtmcAsync[0]),
     USBTMC(&Usb, &UsbtmcAsync[1]),
@@ -140,6 +182,11 @@ void setup()
         ; // Wait for serial port to connect - used on Leonardo, Teensy and other boards with built-in USB CDC serial connection
 #endif
     Serial.println(F("USBTMC Host Start"));
+
+    // Pin each USBTMC instance to a specific physical supply by serial number.
+    // Remove or comment out SetTargetSerialNumber() for devices not present.
+    Usbtmc[0].SetTargetSerialNumber(SERIAL_PSU1);
+    Usbtmc[1].SetTargetSerialNumber(SERIAL_PSU2);
 
     if (Usb.Init() == -1)
         Serial.println(F("OSC did not start."));
@@ -196,8 +243,13 @@ void loop()
     int raw_signal = analogRead(ANINE);
     float amperage = sqrt((( MAX_WATTAGE*raw_signal + MIN_WATTAGE*(1023-raw_signal)   )/(1023*RESISTANCE)));
    
-   String param = "CURR ";
-   param += String(amperage);
+   String param = "";
+   
+       param += "CURR ";
+       param += String(amperage);
+       param += ", (@1,2,3,4)";
+       
+   
    param += (char)USB488Terminator;
 
    //Serial.println("Raw signal: "); Serial.print(raw_signal,DEC); Serial.println(" Amperage: "); Serial.print(amperage,DEC); Serial.println("\n");
@@ -206,9 +258,17 @@ void loop()
     {
         if (Usbtmc[i].IsConnected() && Usbtmc[i].IsIdle())
         {
+
+            
             Usbtmc[i].Transmit(param.length(), (uint8_t *)param.c_str());
+
+            
         }
     }
+
+    //String ret_string = ""
+
+    
 
     delay(100);
 }
