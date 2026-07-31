@@ -19,6 +19,7 @@
 
 #define USBTMC_MESSAGE_SIZE 64
 #define USBTMC_RCV_HEADER_SIZE 12
+#define USBTMC_NAK_TIMEOUT_MS 30000
 
 const uint8_t USBTMC::epDataInIndex = 1;
 const uint8_t USBTMC::epDataOutIndex = 2;
@@ -533,7 +534,7 @@ void USBTMC::Run()
             {
                 //Try again
                 currentMillis = millis();
-                if ((currentMillis - waitBeginMillis) >= 5000)
+                if ((currentMillis - waitBeginMillis) >= USBTMC_NAK_TIMEOUT_MS)
                 {
                     pAsync->OnFailed(USBTMCInformation::ReceiveheaderNakAndTimeouted, 0);
                     commandState = USBTMCState::InitiateAbortBulkIn;
@@ -577,7 +578,7 @@ void USBTMC::Run()
             {
                 //Try again
                 currentMillis = millis();
-                if ((currentMillis - waitBeginMillis) >= 5000)
+                if ((currentMillis - waitBeginMillis) >= USBTMC_NAK_TIMEOUT_MS)
                 {
                     pAsync->OnFailed(USBTMCInformation::ReceivepayloadNakAndTimeouted, 0);
                     commandState = USBTMCState::InitiateAbortBulkIn;

@@ -15,7 +15,7 @@
 
 #define MAX_USBTMC_DEVICES 8
 
-const uint8_t RESPONSE_BUFFER_SIZE = 32;
+const uint8_t RESPONSE_BUFFER_SIZE = 64;
 const uint16_t REQUEST_DELAY_MS = 1000;
 const uint8_t REQUEST_MAX_RETRIES = 4;
 
@@ -294,7 +294,7 @@ void loop()
 
 
     String query = "MEAS:CURR?";
-    query += ", (@1,2,3,4)";
+    query += " (@1,2,3,4)";
     query += (char)USB488Terminator;
 
     for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
@@ -357,6 +357,10 @@ void loop()
         {
             if (Usbtmc[i].IsIdle())
             {
+                if (responseBuf[i].length() >= RESPONSE_BUFFER_SIZE)
+                {
+                    Usbtmc[i].AbortReceive();
+                }
                 printReadback(i);
                 rbState[i] = RB_IDLE;
             }
