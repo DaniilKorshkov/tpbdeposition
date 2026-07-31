@@ -12,6 +12,13 @@
 
 #include <SPI.h>
 
+
+#define MAX_USBTMC_DEVICES 8
+
+const uint8_t RESPONSE_BUFFER_SIZE = 32;
+const uint16_t REQUEST_DELAY_MS = 1000;
+const uint8_t REQUEST_MAX_RETRIES = 4;
+
 const int ANINE = A9;
 const float RESISTANCE = 1.0;
 const float MIN_WATTAGE = 20.0;
@@ -26,6 +33,8 @@ static bool isTransmitOnBin = false;
 enum RbState { RB_IDLE, RB_QUERY_SENT, RB_WAIT_RESPONSE, RB_DONE };
 static RbState rbState[MAX_USBTMC_DEVICES] = { };
 static String responseBuf[MAX_USBTMC_DEVICES];
+static uint32_t querySentMillis[MAX_USBTMC_DEVICES] = { };
+static uint8_t requestAttempts[MAX_USBTMC_DEVICES] = { };
 static String ret_string = "";
 
 class USBTMCAsync : public USBTMCAsyncOper
@@ -64,10 +73,17 @@ void USBTMCAsync::OnRcvdDescr(USB_DEVICE_DESCRIPTOR *pdescr, uint8_t *serialNumP
 
 void USBTMCAsync::OnReceived(uint8_t data)
 {
-    Serial.write(data);
-    if (rbState[devIndex] >= RB_QUERY_SENT)
+    if (rbState[devIndex] == RB_WAIT_RESPONSE)
     {
-        responseBuf[devIndex] += (char)data;
+        if (responseBuf[devIndex].length() < RESPONSE_BUFFER_SIZE)
+        {
+            responseBuf[devIndex] += (char)data;
+        }
+
+        if (data == USB488Terminator)
+        {
+            rbState[devIndex] = RB_DONE;
+        }
     }
 }
 
@@ -97,7 +113,14 @@ void USBTMCAsync::OnReadStatusByte(uint8_t status)
 
 void USBTMCAsync::OnFailed(USBTMCInformation info, uint8_t code)
 {
-    if (info == USBTMCInformation::ReceiveheaderNakAndTimeouted)
+    if (info == USBTMCInformation::RequestError)
+    {
+        // Device NAK'd the REQUEST_DEV_DEP_MSG_IN header because it is still
+        // busy producing the CURR? response. Request() is retried from loop()
+        // until the device accepts the header; a final error is printed there.
+        return;
+    }
+    else if (info == USBTMCInformation::ReceiveheaderNakAndTimeouted)
     {
         Serial.println(F("Receive timeout occured"));
     }
@@ -107,7 +130,7 @@ void USBTMCAsync::OnFailed(USBTMCInformation info, uint8_t code)
     }
     else if (info == USBTMCInformation::AbortbulkinSucceed)
     {
-        Serial.println(F("Abort Bulkin Succeed"));
+        // Expected after AbortReceive() terminates a completed CURR? readback.
     }
     else if (info == USBTMCInformation::ClaerSucceed)
     {
@@ -133,7 +156,6 @@ void USBTMCAsync::OnFailed(USBTMCInformation info, uint8_t code)
     }
 }
 
-#define MAX_USBTMC_DEVICES 8
 
 // USB string descriptor in raw format: [length, 0x03, UTF-16LE chars].
 // To discover actual serials: upload without SetTargetSerialNumber, observe
@@ -240,10 +262,11 @@ void loop()
         return;
     }
 
+
     int raw_signal = analogRead(ANINE);
     float amperage = sqrt((( MAX_WATTAGE*raw_signal + MIN_WATTAGE*(1023-raw_signal)   )/(1023*RESISTANCE)));
    
-   String param = "";
+        String param = "";
    
        param += "CURR ";
        param += String(amperage);
@@ -254,23 +277,115 @@ void loop()
 
    //Serial.println("Raw signal: "); Serial.print(raw_signal,DEC); Serial.println(" Amperage: "); Serial.print(amperage,DEC); Serial.println("\n");
         
+    //for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
+    //{
+    //    if (Usbtmc[i].IsConnected() && Usbtmc[i].IsIdle())
+    //    {
+
+            
+    //        Usbtmc[i].Transmit(param.length(), (uint8_t *)param.c_str());
+
+            
+    //    }
+    //}
+
+
+    delay(100);
+
+
+    String query = "MEAS:CURR?";
+    query += ", (@1,2,3,4)";
+    query += (char)USB488Terminator;
+
     for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
     {
-        if (Usbtmc[i].IsConnected() && Usbtmc[i].IsIdle())
+        if (!Usbtmc[i].IsConnected())
         {
+            continue;
+        }
 
-            
-            Usbtmc[i].Transmit(param.length(), (uint8_t *)param.c_str());
-
-            
+        if (rbState[i] == RB_IDLE)
+        {
+            if (Usbtmc[i].IsIdle())
+            {
+                rbState[i] = RB_QUERY_SENT;
+                requestAttempts[i] = 0;
+                querySentMillis[i] = millis();
+                Usbtmc[i].Transmit(param.length(), (uint8_t *)param.c_str());
+                delay(50);
+                Usbtmc[i].Transmit(query.length(), (uint8_t *)query.c_str());
+            }
+        }
+        else if (rbState[i] == RB_QUERY_SENT)
+        {
+            if ((millis() - querySentMillis[i]) >= REQUEST_DELAY_MS)
+            {
+                Usbtmc[i].Request(RESPONSE_BUFFER_SIZE);
+                if (Usbtmc[i].IsIdle())
+                {
+                    // Device NAK'd the REQUEST_DEV_DEP_MSG_IN header: it is still
+                    // busy producing the CURR? response (the shield's USB transfer
+                    // timeout is 5 s). Give it more time and retry.
+                    requestAttempts[i]++;
+                    if (requestAttempts[i] >= REQUEST_MAX_RETRIES)
+                    {
+                        printReadbackError(i);
+                        Usbtmc[i].Clear();
+                        rbState[i] = RB_IDLE;
+                    }
+                    else
+                    {
+                        querySentMillis[i] = millis();
+                    }
+                }
+                else
+                {
+                    rbState[i] = RB_WAIT_RESPONSE;
+                }
+            }
+        }
+        else if (rbState[i] == RB_DONE)
+        {
+            if (!Usbtmc[i].IsIdle())
+            {
+                Usbtmc[i].AbortReceive();
+            }
+            printReadback(i);
+            rbState[i] = RB_IDLE;
+        }
+        else if (rbState[i] == RB_WAIT_RESPONSE)
+        {
+            if (Usbtmc[i].IsIdle())
+            {
+                printReadback(i);
+                rbState[i] = RB_IDLE;
+            }
         }
     }
 
-    //String ret_string = ""
+    delay(100);
+
 
     
 
-    delay(100);
+
+}
+
+void printReadback(uint8_t devIndex)
+{
+    responseBuf[devIndex].trim();
+    Serial.print(F("Dev["));
+    Serial.print(devIndex);
+    Serial.print(F("] CURR: "));
+    Serial.println(responseBuf[devIndex]);
+    responseBuf[devIndex] = "";
+}
+
+void printReadbackError(uint8_t devIndex)
+{
+    Serial.print(F("Dev["));
+    Serial.print(devIndex);
+    Serial.println(F("] CURR? request timed out"));
 }
 
 String serialReceive()
