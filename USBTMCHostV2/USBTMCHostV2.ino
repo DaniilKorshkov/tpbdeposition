@@ -297,6 +297,8 @@ void loop()
     query += " (@1,2,3,4)";
     query += (char)USB488Terminator;
 
+
+    Serial.print(F("!START!"));
     for (int i = 0; i < MAX_USBTMC_DEVICES; i++)
     {
         if (!Usbtmc[i].IsConnected())
@@ -366,7 +368,7 @@ void loop()
             }
         }
     }
-
+    Serial.print(F("!END!"));
     delay(100);
 
 
